@@ -1,0 +1,1169 @@
+REM /**
+REM  * stringutils.bbj.
+REM  * This class is the successor of the string manipulation functions.
+REM  * @author g.aalvanger
+REM  * @updated by d.dahanukar
+REM  * 20200507 RVDH Carit-5869 adding snipBetween methods to simply parse a small portion of a xml string or for anything else
+REM  * 20210212 GA Carit-4735 CarIT Single User Mode: methods sort(BBjString), removeDuplicates(BBjString), removeDuplicatesNoCaseMatch(BBjString)
+REM  * 20210215 GA CARIT-6882 Routines for Checking/Updating PREFIX string elements
+REM  * 20210225 GA CARIT-6882 After an update the PREFIX was not filled correctly
+REM  * 20210618 GA CARIT-8450 related: new methods replaceStringRegexpRegexp()
+REM  * 20230216 GA CARIT-11874 related: Correction in method extractParentDirectory()
+REM  * 20230313 RVDH CARIT-11923 new method separateAlphaNumericBreaks(BBjString i$,BBjString c$)
+REM  * 20231114 GA CARIT-13868 The trigger is not delivered (New methods stringToVector() and vectorToString())
+REM  */
+
+use com.basiscomponents.db.ResultSet
+use com.basiscomponents.db.DataRow
+
+use java.nio.charset.Charset
+use java.nio.CharBuffer
+use java.nio.ByteBuffer
+use java.util.ArrayList
+use java.util.Collections
+use java.util.Iterator
+use java.util.stream.Collectors
+use java.util.TreeSet
+use org.apache.commons.lang3.StringUtils
+use org.apache.commons.csv.CSVParser
+use org.apache.commons.csv.CSVRecord
+
+class public stringutils
+
+    field private static BBjString signature$ = "stringutils20210618"
+
+
+	REM /**
+	REM  * extract file directory - keep only the folder segment of a full qualified filename
+	REM  * @param BBjString complete filename - like 'c:\0\hello.txt'
+	REM  * @return BBjString directory where the filename is located - the return value will contain the ending slash or backslach. - like 'c:\0\'
+	REM  */
+	method public static BBjString extractDirectory(BBjString filename$)
+		rem ... Maybe you were looking for str(new java.io.File(filename$).getParentFile())
+		temp$ = cast(BBjString,filename$).replaceAll("[/\\]","/"); Rem okay, this regex is not best practice and function could be compressed to only one regex at all here
+		index=pos("/"=temp$,-1)
+		methodret filename$(1,index)
+	methodend
+
+
+	REM /**
+	REM  * extract parent directory of a given subdirectory
+	REM  * @param BBjString sub-directory
+	REM  * @return BBjString parent directory
+	REM  */
+	method public static BBjString extractParentDirectory(BBjString subDirectoryName$)
+		rem ... Maybe you were looking for str(new java.io.File(subDirectoryName$).getParentFile().getParentFile())
+		temp$ = cast(BBjString,subDirectoryName$).replaceAll("[/\\]","/"); Rem okay, this regex is not best practice and function could be compressed to only one regex at all here
+		index=pos("/"=temp$,-1,2)
+		methodret subDirectoryName$(1,index)
+	methodend
+
+
+	REM /**
+	REM  * extract file name - remove the folder segment of a full qualified filename
+	REM  * @param BBjString complete filename
+	REM  * @return BBjString filename only
+	REM  */
+	method public static BBjString extractFilename(BBjString filename!)
+		methodret filename!.replaceAll(".*(\\|/)","")
+	methodend
+
+
+	REM /**
+	REM  * remove extension from filename
+	REM  * @param BBjString filename inluding extension
+	REM  * @return BBjString filename excluding extension
+	REM  */
+	method public static BBjString removeExtension(BBjString filename!)
+		methodret filename!.replaceAll("\.\w+$","")
+	methodend
+
+	REM /**
+	REM  * it will check string contain valid characters or not
+	REM  * @param BBjString f_string$ string name,validChars$ contain some characters
+	REM  * @return boolean
+	REM  */
+	method public static boolean checkValidChars(BBjString f_string$,BBjString validChars$)
+
+		if len(f_string$)=0 then
+			return 1
+		endif
+		for f_x=1 to len(f_string$)
+			if pos(f_string$(f_x,1)=validChars$)=0 then
+				exitto f_has_valid_chars
+			endif
+		next f_x
+		methodret 1
+		f_has_valid_chars:
+		methodret 0
+
+	methodend
+
+	REM /**
+	REM  * insert symbol by taking each character one by one from string
+	REM  * example like s$="TEST" and symbol$="." so output is "T.E.S.T"
+	REM  * @param BBjString s$ string name,Symbol$ contain symbol
+	REM  * @return BBjString
+	REM  */
+	method public static BBjString insertSymbol(BBjString s$,BBjString symbol$)
+		s1$=""
+		if len(s$)>0 then
+			for cnt=1 to len(s$)
+				if POS("."=s$(cnt,1))=0 then
+					s1$=s1$+s$(cnt,1)+"."
+				endif
+			next cnt
+		endif
+		methodret s1$
+	methodend
+
+
+
+	REM /**
+	REM  * Remove the doublet segment and keep its appearance only once. The string is splitted by a whitespace delimiter to process the segments.
+	REM  * @param BBjString with potential doublets like 'Ford Ford Focus Vignale Focus 1.3'
+	REM  * @return BBjString new formatted string without doublets like 'Ford Focus Vignale 1.3'
+	REM  */
+	method public static BBjString removeDoublets(BBjString s1!)
+		declare BBjString s3!
+		declare BBjString term!
+		declare BBjVector v!
+		s3!=""
+		if s1!=null() s1!=""
+		v!=new BBjVector(java.util.Arrays.asList(s1!.split(" ")))
+		if v!.size() then
+			s3!="  "
+			for v=0 to v!.size()-1
+				term!=" "+cast(BBjString,v!.getItem(v))+" "
+				if s3!.toUpperCase().indexOf(term!.toUpperCase())=-1 then
+					s3!=s3!.concat(term!)
+				fi
+			next v
+			s3! = cvs(cvs(s3!,32),3)
+		fi
+		methodret s3!
+	methodend
+
+
+	REM /**
+	REM  * append s2 to s1 and remove double terms in the resultant string. The term determination is processed by splitting the string by the BLANK delimiter.
+	REM  * @param BBjString of source string 1
+	REM  * @param BBjString of source string 2
+	REM  * @return BBjString combination of both source string exluding double segments
+	REM  */
+	method public static BBjString mergeString(BBjString s1!,BBjString s2!)
+		declare BBjString s3!
+		if s1!=null() s1!=""
+		if s2!=null() s2!=""
+		s3! = s1!.concat(" ").concat(s2!)
+		methodret stringutils.removeDoublets(s3!).trim()
+	methodend
+
+
+	rem /**
+    rem  * Aligns string content belonging to its type. Method aligns it left, when the content is aplha-numeric and right if it contains a numeric value.
+    rem  * @param BBjString value to be aligned left or right based on its type.
+    rem  * @param BBjNumber size of the aligned string result.
+    rem  * @return BBjString padded on the left or right side.
+    rem  */
+    method public static BBjString alignString(BBjString value$,BBjNumber length)
+		isNumeric=num(value$,err=*next)
+        methodret iff(isNumeric,pad(value$,length,"R"),pad(value$,length))
+    methodend
+
+
+    REM /**
+    REM  * Replace the first placeholder with the first item of the vector, the second placeholder with the second item of the vector etc.
+    REM  * @param BBjString of the input string containing the placeholders
+    REM  * @param BBjString of the placeholder within the previous input string
+    REM  * @param BBjVector of the collection hosting the replacing text segments
+    REM  * @return BBjString of the replaced input string containing on segment of the collection for each initial placeholder
+    REM  */
+	method public static BBjString replaceInSequence(BBjString inp$,BBjString placeholder!,BBjVector v!)
+	    if placeholder!.length()>1 throw "Only single char placeholders are currently supported. Enhance this method!",301
+	    inp$=" "+inp$+" "
+	    if v!=null()
+	        void$="hhhm"
+	    else
+	        for i=0 to v!.size()-1
+	            seg$=cast(BBjString,v!.get(i))
+	            xpo=pos(placeholder!=inp$)
+	            if xpo=0
+	                break
+	            fi
+	            before$=inp$(1,xpo-1)
+	            after$=inp$(xpo+1)
+	            inp$=before$+seg$+after$
+	        next i
+	    fi
+	    methodret cvs(inp$,3)
+	methodend
+
+
+	rem /**
+	rem  * Replace one string (string1!) with another (string2!) in the
+	rem  * otherCode!
+	rem  */
+	method public static BBjString replaceString(String otherCode!, String string1!, String string2!)
+		methodret otherCode!.replaceAll(java.util.regex.Pattern.quote(string1!),java.util.regex.Matcher.quoteReplacement(string2!))
+	methodend
+
+
+	rem /**
+	rem  * Replace one regexp string (f_string1!) with another string (f_string2!) in the
+	rem  * (f_other_code!) string
+	rem  */
+	method public static BBjString replaceStringRegexp(String f_other_code!,String f_string1!,String f_string2!)
+		methodret f_other_code!.replaceAll(f_string1!,java.util.regex.Matcher.quoteReplacement(f_string2!))
+	methodend
+
+
+	rem /**
+	rem  * Replace one regexp string (f_string1!) with another string (f_string2!) in the
+	rem  * (f_other_code!) string
+	rem  * valid f_flags% values:
+	rem  *   1 java.util.regex.Pattern.UNIX_LINES
+	rem  *   2 java.util.regex.Pattern.CASE_INSENSITIVE (By default, case-insensitive matching assumes that only characters in the US-ASCII charset are being matched)
+	rem  *   4 java.util.regex.Pattern.COMMENTS
+	rem  *   8 java.util.regex.Pattern.MULTILINE
+	rem  *  16 java.util.regex.Pattern.LITERAL
+	rem  *  32 java.util.regex.Pattern.DOTALL (In dotall mode, the expression . matches any character, including a line terminator. By default this expression does not match line terminators.)
+	rem  *  64 java.util.regex.Pattern.UNICODE_CASE
+	rem  * 128 java.util.regex.Pattern.CANON_EQ
+	rem  * 256 java.util.regex.Pattern.UNICODE_CHARACTER_CLASS
+	rem  */
+	method public static BBjString replaceStringRegexp(String f_other_code!,String f_string1!,String f_string2!,BBjInt f_flags%)
+		declare java.util.regex.Pattern f_pattern!
+		declare java.util.regex.Matcher f_matcher!
+		f_pattern!=java.util.regex.Pattern.compile(f_string1!,f_flags%)
+		f_matcher!=f_pattern!.matcher(f_other_code!)
+		if f_matcher!.find() then
+			methodret f_matcher!.replaceAll(java.util.regex.Matcher.quoteReplacement(f_string2!))
+		else
+			methodret f_other_code!
+		endif
+	methodend
+
+
+	rem /**
+	rem  * Replace one regexp string (f_string1!) with another regexp string (f_string2!) in the
+	rem  * (f_other_code!) string
+	rem  */
+	method public static BBjString replaceStringRegexpRegexp(String f_other_code!,String f_string1!,String f_string2!)
+		methodret f_other_code!.replaceAll(f_string1!,f_string2!)
+	methodend
+
+
+	rem /**
+	rem  * Replace one regexp string (f_string1!) with another regexp string (f_string2!) in the
+	rem  * (f_other_code!) string
+	rem  * valid f_flags% values:
+	rem  *   1 java.util.regex.Pattern.UNIX_LINES
+	rem  *   2 java.util.regex.Pattern.CASE_INSENSITIVE (By default, case-insensitive matching assumes that only characters in the US-ASCII charset are being matched)
+	rem  *   4 java.util.regex.Pattern.COMMENTS
+	rem  *   8 java.util.regex.Pattern.MULTILINE
+	rem  *  16 java.util.regex.Pattern.LITERAL
+	rem  *  32 java.util.regex.Pattern.DOTALL (In dotall mode, the expression . matches any character, including a line terminator. By default this expression does not match line terminators.)
+	rem  *  64 java.util.regex.Pattern.UNICODE_CASE
+	rem  * 128 java.util.regex.Pattern.CANON_EQ
+	rem  * 256 java.util.regex.Pattern.UNICODE_CHARACTER_CLASS
+	rem  */
+	method public static BBjString replaceStringRegexpRegexp(String f_other_code!,String f_string1!,String f_string2!,BBjInt f_flags%)
+		declare java.util.regex.Pattern f_pattern!
+		declare java.util.regex.Matcher f_matcher!
+		f_pattern!=java.util.regex.Pattern.compile(f_string1!,f_flags%)
+		f_matcher!=f_pattern!.matcher(f_other_code!)
+		if f_matcher!.find() then
+			methodret f_matcher!.replaceAll(f_string2!)
+		else
+			methodret f_other_code!
+		endif
+	methodend
+
+
+	rem /**
+	rem  * Get first regexp string (f_string1!) in the (f_other_code!) string
+	rem  */
+	method public static BBjString getString(String otherCode!, String string1!)
+		methodret #getString(otherCode!, string1!, 0)
+	methodend
+
+
+	rem /**
+	rem  * Get first regexp string (f_string1!) in the (f_other_code!) string
+	rem  * Valid f_flags values:
+	rem  *   1 java.util.regex.Pattern.UNIX_LINES
+	rem  *   2 java.util.regex.Pattern.CASE_INSENSITIVE (By default, case-insensitive matching assumes that only characters in the US-ASCII charset are being matched)
+	rem  *   4 java.util.regex.Pattern.COMMENTS
+	rem  *   8 java.util.regex.Pattern.MULTILINE
+	rem  *  16 java.util.regex.Pattern.LITERAL
+	rem  *  32 java.util.regex.Pattern.DOTALL (In dotall mode, the expression . matches any character, including a line terminator. By default this expression does not match line terminators.)
+	rem  *  64 java.util.regex.Pattern.UNICODE_CASE
+	rem  * 128 java.util.regex.Pattern.CANON_EQ
+	rem  * 256 java.util.regex.Pattern.UNICODE_CHARACTER_CLASS
+	rem  */
+	method public static BBjString getString(String otherCode!, String string1!, Integer flags!)
+		declare java.util.regex.Pattern pattern!
+		declare java.util.regex.Matcher matcher!
+		pattern!=java.util.regex.Pattern.compile(string1!,flags!)
+		matcher!=pattern!.matcher(otherCode!)
+		if matcher!.find() then
+			methodret matcher!.group(0)
+		else
+			methodret ""
+		endif
+	methodend
+
+
+	rem /**
+	rem  * Get first regexp strings (f_string1!) in the (f_other_code!) string
+	rem  */
+	method public static BBjVector getStrings(String otherCode!, String string1!)
+		methodret #getStrings(otherCode!, string1!, 0)
+	methodend
+
+
+	rem /**
+	rem  * Get first regexp strings (f_string1!) in the (f_other_code!) string
+	rem  * Valid f_flags values:
+	rem  *   1 java.util.regex.Pattern.UNIX_LINES
+	rem  *   2 java.util.regex.Pattern.CASE_INSENSITIVE (By default, case-insensitive matching assumes that only characters in the US-ASCII charset are being matched)
+	rem  *   4 java.util.regex.Pattern.COMMENTS
+	rem  *   8 java.util.regex.Pattern.MULTILINE
+	rem  *  16 java.util.regex.Pattern.LITERAL
+	rem  *  32 java.util.regex.Pattern.DOTALL (In dotall mode, the expression . matches any character, including a line terminator. By default this expression does not match line terminators.)
+	rem  *  64 java.util.regex.Pattern.UNICODE_CASE
+	rem  * 128 java.util.regex.Pattern.CANON_EQ
+	rem  * 256 java.util.regex.Pattern.UNICODE_CHARACTER_CLASS
+	rem  * Regular expressions can be tested via https://regex101.com/
+	rem  */
+	method public static BBjVector getStrings(String otherCode!, String string1!, Integer flags!)
+		declare BBjVector bbjvector!
+		declare java.util.regex.Pattern pattern!
+		declare java.util.regex.Matcher matcher!
+		bbjvector!=new BBjVector()
+		pattern!=java.util.regex.Pattern.compile(string1!,flags!)
+		matcher!=pattern!.matcher(otherCode!)
+		while matcher!.find()
+			bbjvector!.add(matcher!.group(0))
+		wend
+		methodret bbjvector!
+	methodend
+
+
+	REM /**
+	REM  * PROTOTYPE - DO NOT USE YET - from info(1,2) to UTF8 or from UTF-8 to info(1,2) or from any CharSet to any CharSet.
+	REM  * @param BBjString describing the source CharSet which is by default the value of info(1,2) aka windows-1252.
+	REM  * @param BBjString describing the destination CharSet which is by default UTF-8.
+	REM  * @return BBjString of the destination CharSet
+	REM  */
+	method public String fromTo(BBjString sourceCharSet!,BBjString destinationCharSet!,String sourceString!)
+		throw "do not use this! print new String(myString!.getBytes(""UTF-8""),""UTF-8"")",301
+		declare String result!
+		REM // Stephan Wald 2020-11-17:
+		REM //     BBx Strings (A$ - "Dollar"-variables) can only hold UTF-8 if you run BBjServices in UTF-8. Never do that,
+		REM //     it breaks a lot of legacy functionality in existing code!
+		REM //     If you like to use Unicode-Strings, they have to be Java Strings (A!), which will preserve the Unicode Characters.
+		REM //     Please note that the "traditional"  READ/WRITE(RECORD) instructions cannot properly deal with these strings,
+		REM //     but SQL / JDBC does. If writing Unicode to files, make sure to have the entire file encoded in UTF-8,
+		REM //     and to allow for proper record sizes for up to twice as large strings.
+		REM // RVDH Sample - do not use:
+		REM // //       if sourceCharSet!=info(1,2) or sourceCharSet!=""
+		REM // //       	if cvs(destinationCharSet!,11)="utf-8" or cvs(destinationCharSet!,11)="utf8" or destinationCharSet!=""
+		REM // //       		methodret new String(sourceString!.getBytes("UTF-8"),"UTF-8")
+		REM // //       	fi
+		REM // //       fi
+		REM // sourceCharSet!=info(1,2)
+		REM // destinationCharSet!="UTF-8"
+		REM // declare Charset utf8!
+		REM // declare Charset info12!
+		REM // declare ByteBuffer info12ByteBuffer!
+		REM // declare ByteBuffer utf8ByteBuffer!
+		REM // declare CharBuffer unicodeCharbuffer!
+		REM // declare CharBuffer utf8Charbuffer!
+		REM // sourceCharSet$=iff(sourceCharSet!="",info(1,2),sourceCharSet!)
+		REM // destinationCharSet!=iff(destinationCharSet!="","UTF-8",destinationCharSet!)
+		REM // info12! = Charset.forName(sourceCharSet!)
+		REM // utf8! = Charset.forName(destinationCharSet!)
+		REM // info12ByteBuffer! = info12!.newEncoder().encode(CharBuffer.wrap(sourceString!))
+		REM // unicodeCharbuffer! = info12!.newDecoder().decode(info12byteBuffer!); REM internal java encoding 16 bit, UTF-16 aka UNICODE
+		REM // utf8ByteBuffer! = utf8!.newEncoder().encode(unicodeCharbuffer!)
+		REM // utf8Charbuffer! = utf8!.newDecoder().decode(utf8ByteBuffer!)
+		REM // result!=utf8Charbuffer!.toString()
+		methodret result!
+	methodend
+
+
+	rem /**
+	rem  * From UTF-8 to ANSI (Western)
+	rem  */
+	method public static BBjString fromUTF8(BBjString f_string$)
+		methodret new String(f_string$,"UTF8")
+	methodend
+
+
+	rem /**
+	rem  * From ANSI to UTF-8 (Western)
+	rem  */
+	method public static BBjString toUTF8(BBjString f_string$)
+		methodret new String(f_string$).getBytes("UTF8")
+	methodend
+
+
+	rem /**
+	rem  * From OEM (MS-DOS Latin-1 with Euro character) to ANSI (Western)
+	rem  */
+	method public static BBjString fromOEM(BBjString f_string$)
+		methodret new String(f_string$,"Cp858")
+	methodend
+
+	
+	rem /**
+	rem  * From ANSI (Western) to OEM (MS-DOS Latin-1 with Euro character)
+	rem  */
+	method public static BBjString toOEM(BBjString f_string$)
+		methodret new String(f_string$).getBytes("Cp858")
+	methodend
+
+	
+	rem /**
+	rem  * Convert a $0A$ separated string to Properties
+	rem  */
+	method public static java.util.Properties stringToProperties(BBjString propertiesString$)
+		declare java.util.Properties propertiesFromString!
+		propertiesFromString!=new java.util.Properties()
+		propertiesFromString!.load(new java.io.StringReader(propertiesString$))
+		methodret propertiesFromString!
+	methodend
+
+
+	rem /**
+	rem  * Sort a $0A$ separated string
+	rem  */
+	method public static BBjString sort(BBjString aString!)
+		if pos($0a$=aString!)=0 or pos($0a$=aString!)=len(aString!) then methodret aString!
+		rem This is the Java sort; Please notice that $FF$ is not the very last character
+		declare BBjVector aSortData!
+		declare java.util.Iterator aSortData_iterator!
+		if aString!.endsWith($0A$) then
+			aString!=aString!.substring(0,len(aString!)-1)
+		endif
+		aSortData!=new BBjVector(java.util.Arrays.asList(new java.lang.String(aString!).split($0a$,-1)))
+		java.util.Collections.sort(aSortData!)
+		aSortData_iterator!=aSortData!.iterator()
+		aString!=""
+		while aSortData_iterator!.hasNext()
+			aString!=aString!+str(aSortData_iterator!.next())+$0A$
+		wend
+		methodret aString!
+	methodend
+
+
+	rem  * Remove duplicates of a $0A$ separated string vector
+	rem  * @param BBjVector which may have duplicates
+	rem  * @return BBjVector without duplicates
+	rem  */
+	method public static BBjVector removeDuplicates(BBjVector aBBjVector!)
+		declare BBjString aString!
+		aString!=StringUtils.join(aBBjVector!.toArray(),$0a$)
+		aString!=#removeDuplicates(aString!,0)
+		aBBjVector!=new BBjVector()
+		Collections.addAll(aBBjVector!,aString!.split($0a$))
+		methodret aBBjVector!
+	methodend
+
+
+	rem /**
+	rem  * Remove duplicates of a $0A$ separated string vector no case match
+	rem  * @param BBjVector which may have duplicates
+	rem  * @return BBjVector without duplicates
+	rem  */
+	method public static BBjVector removeDuplicatesNoCaseMatch(BBjVector aBBjVector!)
+		declare BBjString aString!
+		aString!=StringUtils.join(aBBjVector!.toArray(),$0a$)
+		aString!=#removeDuplicates(aString!,1)
+		aBBjVector!=new BBjVector()
+		Collections.addAll(aBBjVector!,aString!.split($0a$))
+		methodret aBBjVector!
+	methodend
+
+
+	rem /**
+	rem  * Remove duplicates of a $0A$ separated string
+	rem  */
+	method public static BBjString removeDuplicates(BBjString aString!)
+		methodret #removeDuplicates(aString!,0)
+	methodend
+
+
+	rem /**
+	rem  * Remove duplicates of a $0A$ separated string no case match
+	rem  */
+	method public static BBjString removeDuplicatesNoCaseMatch(BBjString aString!)
+		methodret #removeDuplicates(aString!,1)
+	methodend
+
+
+	rem /**
+	rem  * Remove duplicates of a $0A$ separated string
+	rem  */
+	method protected static BBjString removeDuplicates(BBjString aString!, Boolean aNoCaseMatch!)
+		if pos($0a$=aString!)=0 or pos($0a$=aString!)=len(aString!) then methodret aString!
+		declare BBjVector aNoDuplicateData!
+		declare BBjVector aDuplicateData!
+		declare java.util.TreeSet aTreeSet!
+		declare java.util.TreeSet aTreeSetCaseSensitiveOrder!
+		declare java.util.Iterator aNoDuplicateData_iterator!
+		if aString!.endsWith($0A$) then
+			aString!=aString!.substring(0,len(aString!)-1)
+		endif
+		aNoDuplicateData!=new BBjVector(java.util.Arrays.asList(new java.lang.String(aString!).split($0a$,-1)))
+		aNoDuplicateData!=new BBjVector(cast(ArrayList,aNoDuplicateData!.stream().distinct().collect(Collectors.toList())))
+		if aNoCaseMatch! then
+			aTreeSet!=new TreeSet(java.lang.String.CASE_INSENSITIVE_ORDER)
+			aTreeSet!.addAll(aNoDuplicateData!)
+			aTreeSetCaseSensitiveOrder!=new TreeSet()
+			aTreeSetCaseSensitiveOrder!.addAll(aTreeSet!)
+			rem aDuplicateData!=aNoDuplicateData! ; rem Wrong: referenced contents!
+			aDuplicateData!=new BBjVector()
+			aDuplicateData!.addAll(aNoDuplicateData!)
+			aDuplicateData!.removeAll(aTreeSetCaseSensitiveOrder!)
+			aNoDuplicateData!.removeAll(aDuplicateData!)
+			rem aNoDuplicateData!=new BBjVector(aTreeSet!) ; rem This would give a sorted result in case insensitive order
+			rem java.util.Collections.sort(aNoDuplicateData!) ; rem This would give a sorted result
+		endif
+		aNoDuplicateData_iterator!=aNoDuplicateData!.iterator()
+		aString!=""
+		while aNoDuplicateData_iterator!.hasNext()
+			aString!=aString!+str(aNoDuplicateData_iterator!.next())+$0A$
+		wend
+		methodret aString!
+	methodend
+
+
+	rem /**
+	rem  * Get PREFIX string elements in a Vector
+	rem  * The keyword PREFIX may be used as optional first element
+    rem  * @param BBjString with prefix (string)
+    rem  * @return BBjVector with all prefixes and, if applicable, the keyword PREFIX as optional first element
+	rem  */
+	method public static BBjVector getPrefixStringElements(BBjString aString!)
+		declare org.apache.commons.csv.CSVParser aCSVParser!
+		declare Iterator aIterator!
+		declare org.apache.commons.csv.CSVRecord aCSVRecord!
+		declare BBjVector aBBjVector!
+		aString!=aString!.replaceAll(" ",",")
+		aCSVParser!=new org.apache.commons.csv.CSVParser(new java.io.StringReader(aString!),org.apache.commons.csv.CSVFormat.EXCEL)
+		aIterator!=aCSVParser!.iterator()
+		aCSVRecord!=cast(CSVRecord,aIterator!.next())
+		aBBjVector!=new BBjVector()
+		for i=0 to aCSVRecord!.size()-1
+			aString!=str(aCSVRecord!.get(i))
+			if cvs(aString!,7)<>"PREFIX" then
+				rem aString!=aString!.replaceAll(","," ").replaceAll("\\","/").replaceAll("/*$","/")
+				rem The usage of the end of a line ($) is problematic during replaceAll() in Java
+				rem Java finds 2 strings: a normal string and an empty string and uses the replacement for both strings.
+				rem Therefor the command should be:
+				aString!=aString!.replaceAll(","," ").replaceAll("\\","/").replaceFirst("/*$","/")
+			endif
+			if len(aString!) then
+				aBBjVector!.add(aString!)
+			endif
+		next i
+		aBBjVector!=#removeDuplicatesNoCaseMatch(aBBjVector!)
+		methodret aBBjVector!
+	methodend
+
+
+	rem /**
+	rem  * Put Vector elements into a PREFIX string
+	rem  * The keyword PREFIX may be used as optional first element
+    rem  * @param BBjVector with all prefixes
+    rem  * @return BBjString with prefix (string)
+	rem  */
+	method public static BBjString putPrefixStringElements(BBjVector aBBjVector!)
+		declare Iterator aIterator!
+		aIterator!=aBBjVector!.iterator()
+		while aIterator!.hasNext()
+			aString$=str(aIterator!.next())
+			if pos(" "=aString$) then
+				aString$=""""+aString$+""""
+			endif
+			aResult$=aResult$+" "+aString$
+		wend
+		methodret cvs(aResult$,3)
+	methodend
+
+
+	rem /**
+    rem  * Check if the string is a valid numeric value.
+    rem  * @param BBjString value to be checked.
+    rem  * @return BBjNumber 0=Not number, 1=Number
+    rem  */
+    method public static BBjNumber isNumeric(BBjString value$)
+		blnIsNumber=0; void=num(value$,err=*next); blnIsNumber=1
+        methodret blnIsNumber
+    methodend
+
+
+	REM /**
+	REM  * Remove all alphabet chars of a string.
+	REM  * @param BBjString strData$ input string like "+14(171)8317778 Mister"
+	REM  * @return BBjString like "+14(171)8317778"
+	REM  */
+    method public static BBjString removeAlphaChar(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("[a-zA-Z]","")
+    	methodret cvs(strVoid$,1+2+32)
+    methodend
+
+	REM /**
+    REM  * @return BBjString like "+14(171)8317778"
+	REM  */
+    method public static BBjString removeAllAlphaNumericChars(BBjString f_string$)
+    	declare BBjString strVoid$
+    	f_string$=CVS(f_string$,3)
+		if f_string$="" then
+			methodret f_string$
+		endif
+		f_string1$=""
+		FOR intPos=1 TO LEN(f_string$)
+			if f_string$(intPos,1)>="0" AND f_string$(intPos,1)<="9" then
+				f_string1$=f_string1$+f_string$(intPos,1)
+			endif
+		NEXT intPos
+
+    	methodret f_string1$
+    methodend
+
+
+	REM /**
+	REM  * Remove all alphabet chars after the last appearance of a number.
+	REM  * @param BBjString strData$ input string like "July street 17c"
+	REM  * @return BBjString like "July street"
+	REM  */
+    method public static BBjString removeCharFromFirstNumericChar(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("\d.*","")
+    	methodret cvs(strVoid$,1+2+32)
+    methodend
+
+
+	REM /**
+	REM  * Keep only the alphabet characters of a string.<br>
+	REM  * Returns the BBjString after removing all not alphabet characters.<br>
+	REM  * E.g. becomes 'FORD ÖÄÜöäüß 43 KUGA 14 (3.0) XX' finally 'FORD ÖÄÜöäüß KUGA XX'
+	REM  * E.g. >> s$="[ {""hello"":""world""} ]" << becomes then >> hello world <<
+	REM  * @param BBjString strData$ input string
+	REM  * @return BBjString
+	REM  */
+    method public static BBjString removeNonAlphaChar(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("\P{L}+", " ")
+    	methodret strVoid$
+    methodend
+
+
+	REM /**
+	REM  * Remove duplicate words. (Notice removeDoublets which is a bit slower but also removes numeric double segments.)
+	REM  * @param BBjString input like 'hello world world again'
+	REM  * @return BBjString output 'hello world again'
+	REM  */
+    method public static BBjString removeDuplicateNeighborWords(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("(?i)\b([a-z]+)\b(?:\s+\1\b)+", "$1")
+    	methodret strVoid$
+    methodend
+
+
+	REM /**
+	REM  * Remove duplicate segments appearance COMPLETELY! The string is internally splitted into segments using a whitespace delimiter. The duplicate is then done for each segment. This method could also be used to compare two separated segmented strings of the same context. Imagine to combine two strings with a separating blank in the middle. Concat one string to another with a separating blank in between. Call this method. If the resultant string is empty, are both initial string contently identical!
+	REM  * @param BBjString input like 'Ford Ford Mustang Vignale 5.0'
+	REM  * @return BBjString output 'Mustang Vignale 5.0'
+	REM  * @see ATTENTION: You propably prefer removeDoublets to keep 1x appearance of a doublet existing term.
+	REM  */
+    method public static BBjString removeDuplicateWords(BBjString s1!)
+		declare BBjString term!
+		declare BBjVector v!
+		s1!=" "+s1!+" "
+		v!=new BBjVector(java.util.Arrays.asList(s1!.split(" ")))
+		if v!.size() then
+			for v=0 to v!.size()-1
+				term!=cast(BBjString,v!.getItem(v))
+				appearance=pos(" "+term!+" "=s1!,1,0)
+				if appearance>1
+					s1!=s1!.replace(term!,"")
+				fi
+			next v
+		fi
+		methodret cvs(cvs(s1!,32),3)
+    methodend
+
+
+
+	REM /**
+	REM  * removes all NOT numeric characters of a string. Only numbers from 0 to 9 are remaining.
+	REM  * @param BBjString strData$ input string
+	REM  * @return BBjString
+	REM  */
+    method public static BBjString removeNonNumericChar(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("[^0-9.]", "")
+    	methodret strVoid$
+    methodend
+
+
+
+	REM /**
+	REM  * Returns the BBjString after removing all numeric characters
+	REM  * @param BBjString strData$ input string
+	REM  * @return BBjString
+	REM  */
+    method public static BBjString removeNumericChar(BBjString strData!)
+    	declare BBjString strVoid$
+    	strVoid$ = strData!.replaceAll("[0-9 ]", "")
+    	methodret strVoid$
+    methodend
+
+
+	REM /**
+	REM  * split a string in portions and hold up the readability.
+	REM  * @param BBjString of the long text to split for.
+	REM  * @param BBjNumber optional max length of each portion. If ZERO, then it is required to fill the third parameter - the delimiter character.
+	REM  * @param BBjString optional delimiter character. When empty is the string really cut per length of the portion and no care is taken about cutting full words anywhere in between.
+	REM  *                  To keep words completed, apply the space character if the words are separated by blanks!
+	REM  */
+	method public static BBjVector split(BBjString s$,BBjNumber l,BBjString d$)
+		declare BBjVector v!
+		v! = new BBjVector()
+		if s$>""
+			if l=0 and d$>""
+				v!=new BBjVector(java.util.Arrays.asList(new java.lang.String(s$).split("["+d$+"]")))
+			fi
+			if l>0
+				while 1
+					if len(s$)>l
+						lx=l
+						s1$=s$(1,lx)
+						if d$>""
+							p1=pos(d$=s1$,-1)
+							if p1>2
+								s1$=s$(1,p1)
+								lx=p1
+							fi
+						fi
+						v!.add(s1$)
+						s$=s$(lx+1)
+					else
+						s1$=s$
+						v!.add(s1$)
+						s$=""
+						break
+					fi
+				wend
+			fi
+		fi
+		methodret v!
+	methodend
+
+
+	REM /**
+	REM  * create a unique checksum string of a text. This is a kind of non intellectual one way encryption infeasible to invert.
+	REM  * @param BBjString plain readable text like "the red brown fox is quick and smart"
+	REM  * @return BBjString hexadecimal unreadable short reprensatation like "31303738352E3436"
+	REM  */
+	method public static BBjString checksum(BBjString long$)
+		for i=1 to len(long$)
+			sum=sum+i*asc(long$(i,1))
+		next i
+		methodret hta(str(sum))
+	methodend
+
+
+	REM /**
+	REM  * Returns the BBjString by converting DataRow to JSON String representation
+	REM  * Internally it uses rsToJsonString(ResultSet rs!). It adds the DatRow passed to temporary ResultSet.
+	REM  * @DataRow dr! input DataRow
+	REM  * @return BBjString
+	REM  */
+    method public static BBjString drToJsonString(DataRow dr!)
+		declare ResultSet rs!
+		rs!=new ResultSet()
+		rs!.add(dr!)
+    	methodret #rsToJsonString(rs!)
+    methodend
+
+
+	REM /**
+	REM  * Returns the BBjString by converting resutlSet to JSON String representation.<br>
+	REM  * It inserts special escape character for double quote '"' as '\"' as requested by Nintec.
+	REM  * The attributes values are handled in following way.
+	REM  * NUMERIC => 0 goes as 0, 123 goes as 123, null goes as null. Every value without quotes.
+	REM  * VARCHAR => "" goes as \"\", "I am proper value" goes as \"I am proper value\", null goes as null without qoutes.
+	REM  * DATE => "" goes as \"\", "2020-01-24" goes as \"2020-01-24\", null goes as null without qoutes.
+	REM  * BBjArrayList/BBjVector => Not tested yet.
+	REM  * DataRow => Empty goes as {}, With data(key-value pair) goes as {\"WPS_HEA_ID\":\"745129\",\"WPS_SEQ_NR\":\"501\",\"WPSL_TIME\":0,...}.
+	REM  * ResultSet => Empty goes as [], With data(key-value pair) goes as [{\"WPS_HEA_ID\":\"745129\",\"WPS_SEQ_NR\":\"501\",\"WPSL_TIME\":0,...},{\"WPS_HEA_ID\":\"745129\",\"WPS_SEQ_NR\":\"1001\",\"WPSL_TIME\":0,...}].
+	REM  * DEFAULT => "" goes as \"\", "I am proper value with data type not coded in switch case" goes as \"I am proper value with data type not coded in switch case\", null goes as null without qoutes.
+	REM  * @ResultSet rs! input recordset
+	REM  * @return BBjString
+	REM  */
+    method public static BBjString rsToJsonString(ResultSet rs!)
+    	declare DataRow drTemp!
+    	declare DataRow drChild!
+    	declare ResultSet rsChild!
+    	declare BBjString strTemp!
+		strJsonString$=""
+		if rs!.size()>0 then
+			for i=0 to rs!.size()-1
+				strJsonString$=strJsonString$+"{"
+				drTemp!=rs!.get(i)
+				for j=0 to drTemp!.getColumnCount()-1
+					strColName$=drTemp!.getColumnName(j)
+					strColval$=""
+					numType=num(drTemp!.getFieldType(strColName$))
+					REM class$=drTemp!.getFieldValue(strColName$).getClass(err=*next).getName()
+					switch numType
+						case java.sql.Types.BOOLEAN
+						case java.sql.Types.INTEGER
+						case java.sql.Types.NUMERIC
+						case java.sql.Types.DOUBLE
+						case java.sql.Types.DECIMAL
+							if drTemp!.getFieldValue(strColName$) = null() then
+								strColval$=cvs(str(drTemp!.getFieldValue(strColName$)),3)
+							else
+								strColval$=cvs(str(drTemp!.getFieldAsNumber(strColName$)),3)
+							endif
+							strJsonString$=strJsonString$+"\""" +strColName$ + "\"":" + strColval$
+							break
+						case java.sql.Types.CHAR
+						case java.sql.Types.VARCHAR
+						case java.sql.Types.NVARCHAR
+						case java.sql.Types.NCHAR
+						case java.sql.Types.LONGVARCHAR
+						case java.sql.Types.LONGNVARCHAR
+						case java.sql.Types.DATE
+						case 9; REM BASIS Date
+							if drTemp!.getFieldValue(strColName$) = null() then
+								strColval$=cvs(str(drTemp!.getFieldValue(strColName$)),3)
+								strJsonString$=strJsonString$+"\""" +strColName$ + "\"":" + strColval$
+							else
+								strColval$=cvs(str(drTemp!.getFieldAsString(strColName$)),3)
+								strJsonString$=strJsonString$+"\""" +strColName$ + "\"":\""" + strColval$ +"\"""
+							endif
+							break
+						case -973; REM an BBjArrayList(BBjVector)
+							break
+						case -974; REM a nested DataRow
+							drChild!=cast(DataRow,drTemp!.getFieldValue(strColName$))
+							if drChild!<>null() and !(drChild!.isEmpty()) then
+								strColval$=#drToJsonString(drChild!)
+							endif
+							strJsonString$=strJsonString$+"\""" +strColName$ + "\"":{" + strColval$ +"}"
+							REM As the Joson string prepared may contain the wrapper "{}" used in temporary ResultSet in above call #drToJsonString(drChild!). Remove it.
+							strTemp!= strJsonString$
+							strTemp! = strTemp!.replaceAll("\{\{","\{")
+							strTemp! = strTemp!.replaceAll("\}\}","\}")
+							strJsonString$ = STR(strTemp!)
+							break
+						case -975; REM a nested ResultSet
+							rsChild!=cast(ResultSet,drTemp!.getFieldValue(strColName$),err=*break)
+							if rsChild!<>null() and rsChild!.size()>0 then
+								strColval$=#rsToJsonString(rsChild!)
+							endif
+							strJsonString$=strJsonString$+"\""" +strColName$ + "\"":[" + strColval$ +"]"
+							break
+						case default; REM For all other datatypes
+							strColval$=cvs(str(drTemp!.getFieldValue(strColName$)),3)
+							if drTemp!.getFieldValue(strColName$) = null() then
+								strJsonString$=strJsonString$+"\""" +strColName$ + "\"":" + strColval$
+							else
+								strJsonString$=strJsonString$+"\""" +strColName$ + "\"":\""" + strColval$ +"\"""
+							endif
+							break
+					swend
+
+					if j<drTemp!.getColumnCount()-1 then
+						strJsonString$=strJsonString$+","
+					endif
+				next j
+				strJsonString$=strJsonString$+"}"
+				if rs!.size() > 1 and i < rs!.size()-1 then
+					strJsonString$=strJsonString$+","
+				endif
+		endif
+		next i
+    	methodret strJsonString$
+    methodend
+
+    REM /**
+    REM  * @param BBjString source main string
+    REM  * @param BBjNumber offset of the starting mark within the source main string starting with 1 for the fist appearance etc.
+    REM  *
+    REM  */
+    method public static BBjString prepareSqlORing(BBjString fieldPrefix$, BBjString fieldName$,java.util.ArrayList alFieldVals!)
+        declare BBjString sqlOrCon!
+        sqlOrCon!=""
+        if alFieldVals!.size() then
+          for i=0 to alFieldVals!.size()-1
+              if len(fieldPrefix$) then
+                sqlOrCon!=sqlOrCon!+fieldPrefix$+"."
+              endif
+              sqlOrCon!=sqlOrCon!+fieldName$+"='"+str(alFieldVals!.get(i))+"'"
+              if (i<alFieldVals!.size()-1) then
+                sqlOrCon!=sqlOrCon!+" OR "
+              endif
+          next i
+        endif
+        methodret sqlOrCon!
+    methodend
+
+	REM /**
+	REM  * cut out a text portion (case sensitive!)
+	REM  * @param BBjString source main string
+	REM  * @param BBjNumber offset of the starting mark within the source main string starting with 1 for the fist appearance etc.
+	REM  * @param BBjString startMark character(s)
+	REM  * @param BBjString ending mark character(s)
+    REM  * EXAMPLE: 
+    REM  * origin$=".....expires_in"":86400.0,""MILLIS_EXPIRES_IN"":1.633198609864E12,""meta"":......."
+    REM  * offset = 1
+    REM  * startMark$="MILLIS_EXPIRES_IN"
+    REM  * endMark$=","
+    REM  * snippet$=s!.snipBetween(origin$,offset,startMark$,endMark$).replace(":","").replace("""","")
+    REM  * MILLIS_EXPIRES_IN=num(snippet$)
+	REM  */
+	method public static BBjString snipBetween(BBjString origin$,BBjNumber offset, BBjString startMark$,BBjString endMark$)
+		ios=pos(startMark$=origin$,1,max(1,offset))
+		if ios
+			snip$=origin$(ios+len(startMark$))
+		fi
+		ioe=pos(endMark$=snip$)
+		if ioe
+			snip$=snip$(1,ioe-1)
+		fi
+		methodret snip$
+	methodend
+
+
+	REM /**
+	REM  * cut out a text portion (case sensitive!)
+	REM  * @param BBjString source main string
+	REM  * @param BBjNumber offset of the starting mark within the source main string starting with 1 for the fist appearance etc.
+	REM  */
+	method public static BBjString snipBetween(BBjString origin$,BBjNumber offset, BBjString mark$)
+		ios=pos(mark$=origin$,1,max(1,offset*2-1))
+		if ios
+			snip$=origin$(ios+len(mark$))
+		fi
+		ioe=pos(mark$=snip$)
+		if ioe
+			snip$=snip$(1,ioe-1)
+		fi
+		methodret snip$
+	methodend
+
+	REM /**
+	REM  * it will check string contain valid case characters and numerals for License or not. The "-" and " " are replaced inside the method to verify the case and numerals
+	REM  * @param BBjString sLicense$ string name
+	REM  * @param BBjNumber iCase .. values are 0= Lower case, 1= Upper case
+	REM  * @return boolean : value false indicates it is NOT a valid License as it contains a case other than that is desired. value true indicates it is of proper case
+	REM  */
+	method public static boolean validateCharCase(BBjString strLicense$, BBjNumber iCase )
+		if len(strLicense$)=0 then
+			methodret 0
+		endif
+		REM remove "-" and spaces
+		strLicense$ = cast(BBjString,strLicense$).replace("-","")
+		strLicense$ = cast(BBjString,strLicense$).replace(" ","")
+		REM define valid characters based on Parameter iCase
+		if iCase=0 then
+			validChars$="abcdefghijklmnopqrstuvwxyz0123456789"
+		else
+			validChars$="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+		endif
+		REM Validate for each of the characters within the License
+		inValidChars=0
+		for iNum=1 to len(strLicense$)
+			if pos(strLicense$(iNum,1)=validChars$)=0 then
+				inValidChars=inValidChars+1
+				break
+			endif
+		next iNum
+		if inValidChars>0 then
+			methodret 0
+		else
+			methodret 1
+		endif
+
+	methodend
+	
+	
+	REM /**
+	REM  * Add a character like space whenever an alpha char follows a numeric char or vice versa.
+	REM  * Example: "E2008 Peugeot TFSI 2.0eco" becomes "E 2008 Peugeot TFSI 2.0 eco"
+	REM  * @param BBjString i$ for the input
+	REM  * @param BBjString c$ for the spacing character which is blank space by default
+	REM  * @return new formatted string
+	REM  */
+	method public static BBjString separateAlphaNumericBreaks(BBjString i$,BBjString c$)
+		c$=iff(c$=""," ",c$)
+		cmp$=cvs(i$,4)
+		pt=-1
+		if cmp$>""
+			for i=1 to len(cmp$)
+				a$=i$(i,1)
+				a=asc(cmp$(i,1))
+				t=-1
+				if a>47 and a<58 t=0; REM 0=alpha
+				if a>64 and a<91 t=1; REM 1=num
+				if t>-1 AND pt>-1 AND t<>pt
+					a$=c$+a$
+				fi
+				pt=t
+				o$=o$+a$
+			next i
+		fi
+		methodret o$
+	methodend
+
+	rem  * Copy a $0A$ separated string to a BBjVector
+	rem  * @param $0A$ separated BBjString
+	rem  * @return BBjVector with strings
+	rem  */
+	method public static BBjVector stringToVector(BBjString aBBjString!)
+		aBBjVector!=new BBjVector()
+		Collections.addAll(aBBjVector!,aBBjString!.split($0a$))
+		methodret aBBjVector!
+	methodend
+
+	rem  * Copy a BBjVector to a $0A$ separated string
+	rem  * @param BBjVector with strings
+	rem  * @return $0A$ separated BBjString
+	rem  */
+	method public static BBjString vectorToString(BBjVector aBBjVector!)
+		declare BBjString aBBjString!
+		aBBjString!=StringUtils.join(aBBjVector!.toArray(),$0a$)
+		methodret aBBjString!
+	methodend
+
+classend
+
+rem /**
+rem  * demo
+rem  */
+
+rem start
+rem BBjAPI().getConfig().unpinSession()
+rem load "D:\CarITDMS\BBjPrograms\commons\stringutils.bbj"
+rem start
+rem BBjAPI().getConfig().unpinSession() ; load "D:\CarITDMS\BBjPrograms\commons\stringutils.src"
+rem run
+print'el',"2"+chr(3)+chr(2)+"."+$0d$ ; rem Arrow Down
+print'el',"2"+chr(7)+chr(2)+"."+$0d$ ; rem Page Down
+print'fl',"2"+chr(9)+chr(7)+"escape"+$0d$ ; rem F10
+print'fl',"2"+chr(10)+chr(4)+"bye"+$0d$ ; rem F11
+print'fl',"2"+chr(11)+chr(4)+"run"+$0d$ ; rem F12
+
+declare stringutils s!
+declare BBjVector v!
+declare BBjString any!
+s! = new stringutils()
+
+
+any!=null()
+print s!.removeDoublets(any!)
+escape
+
+
+
+q$=s!.separateAlphaNumericBreaks("e2008 Hb89 12-xQ KKKK1979","")
+
+v!=s!.getPrefixStringElements("""D:/CarITDMS/b i tmaps/"" D:/CarITDMS/programs/ C:\Progra~1\BASIS\TOOLS\GUIBUILD\  D:/CarITDMS/PROGRAMS/ C:/Progra~1/BASIS/STD/ C:/Progra~1/BASIS/ext/ C:/Progra~1/BASIS/VPRO5/")
+v!.removeIf(java.util.regex.Pattern.compile("/PROGRAMS/",2).asPredicate())
+print v!
+
+g$="abc"+$0A$
+g$=g$+"abc"+$0A$
+g$=g$+"ABC"+$0A$
+g$=g$+"BCD"+$0A$
+g$=g$+"ABCD"+$0A$
+print s!.removeDuplicates(g$)
+escape
+print s!.removeDuplicatesNoCaseMatch(g$)
+escape
+
+a$="<DMS TYPE= ""01""  CODE_INTERROGATION= ""1""  CHAMPS_CMPL= ""FOKIN""  NumeroPoste= ""015""  PARAMDMS= """"  MARQUE_RECEP= ""OV"" />"
+NumeroPoste$=s!.snipBetween(a$,1,"NumeroPoste= ""","""")
+?NumeroPoste$
+
+REM // snipBetween..
+origin$="<response xmlns="""">Function: ""CSH.ClientServices.Ford.STARWS3.WebServiceClient.ProcessMessage""&#xD;Message: <ErrorMessages xmlns=""urn:ford/errormessage/v1.0""><ErrorMessage><ErrorCode>ERROR_UNSPECIFIED</ErrorCode><ErrorDescription>&lt;ErrorMessages xmlns=""urn:ford/errormessage/v1.0""&gt;  &lt;ErrorMessage&gt;    &lt;ErrorCode&gt;ERROR_UNSPECIFIED&lt;/ErrorCode&gt;    &lt;ErrorDescription&gt;Exception occured while executeBusinessProcessCB in Repairorder controllercom.ford.it.udbdms.common.exception.UDBDmsRuntimeException: Exception occred while sending files through FTP&lt;/ErrorDescription&gt;    &lt;ErrorTime&gt;2020-06-04T06:00:38.586-05:00&lt;/ErrorTime&gt;  &lt;/ErrorMessage&gt;&lt;/ErrorMessages&gt; : null</ErrorDescription><ErrorTime>2020-06-04T06:00:38.596-05:00</ErrorTime></ErrorMessage></ErrorMessages></response>"
+for envelope=1 to 100
+	ErrorMessages$=s!.snipBetween(origin$,envelope,"<ErrorMessages","</ErrorMessages>")
+	if ErrorMessages$=""
+		break
+	else
+		for errorMessage=1 to 100
+			ErrorMessage$=s!.snipBetween(ErrorMessages$,errorMessage,"ErrorMessage>","</ErrorMessage>")
+			if ErrorMessage$=""
+				break
+			else
+				?ErrorMessage$
+				ErrorCode$=s!.snipBetween(ErrorMessage$,1,"<ErrorCode>","</ErrorCode>")
+				?"ErrorCode:"+ErrorCode$
+				ErrorDescription$=s!.snipBetween(ErrorMessage$,1,"<ErrorDescription>","</ErrorDescription>")
+				?"ErrorDescription:"+ErrorDescription$
+				ErrorTime$=s!.snipBetween(ErrorMessage$,1,"<ErrorTime>","</ErrorTime>")
+				?"ErrorTime:"+ErrorTime$
+				escape
+			fi
+		next errorMessage
+	fi
+	escape
+next envelope
+escape
+
+REM // div
+t$=s!.removeNonAlphaChar("[ {""hello"":""world""} ]"); REM becomes ' hello world '
+
+v!=new BBjVector()
+v!.add("first")
+v!.add("second")
+inp$="This is the '^' and this the '^' item, but the third '^' remains unchanged!"
+new$=stringutils.replaceInSequence(inp$,"^",v!)
+?new$
+escape
+
+?s!.removeCharFromFirstNumericChar("July street 17x")
+escape
+print ">"+s!.removeDuplicateWords("July street 17x July street 17 x")+"<"
+escape
+
+print s!.removeDuplicateNeighborWords("17x17x")
+escape
+print s!.removeDoublets("Ford Ford Focus Vignale Focus 1.3")
+escape
+print s!.mergeString("hello world 1","hello world 1")
+escape
+print s!.removeDuplicateNeighborWords("hello world world again again welcome")
+escape
+
+print s!.checksum("CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth CONVERGIT TAPIDroid - LG-D855 Bluetooth")
+print s!.checksum("the red brown fox is quick and smart")
+print s!.removeAlphaChar("+14(171)8317778 Frau FRAU HERR Herr Firma Company 999 A")+"<<"
+REM v! = s!.split("LEO verwendet First-Party- und Third-Party-Cookies, um Ihnen das beste personalisierte Webseiten-Erlebnis zu ermöglichen. Dies beinhaltet auch für Sie ausgewählte Werbung.",30,".")
+v! = s!.split("",30,".")
+?str(v!)
+print s!.replaceString("Tast","a","e")
+print stringutils.replaceString("Tast","a","e")
+print s!.mergeString("hello : the WORld","the worLD is beautiful"); REM result may not include the doublette 'world'
+
+print s!.extractDirectory("c:/0/hello.txt")
+print s!.extractDirectory("c:\0\hello.txt")
+print s!.extractDirectory("\\db01\0\hello.txt")
+print s!.extractFilename("c:/0/hello.txt")
+print s!.extractFilename("c:\0\hello.txt")
+print s!.extractFilename("\\db01\0\hello.txt")
+print s!.removeExtension("c:\0\hello.txt")
+print s!.removeExtension("voodooDolly.pdf")
+end
